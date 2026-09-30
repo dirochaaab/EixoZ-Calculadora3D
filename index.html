@@ -9,8 +9,7 @@
 <meta property="og:site_name" content="EixoZ">
 <meta property="og:title" content="EixoZ Calculadora 3D">
 <meta property="og:description" content="Planeje, calcule, imprima. Calcule o preço da sua impressão 3D.">
-<meta property="og:url" content="https://dirochaaab.github.io/NOME-DO-REPOSITORIO/">
-<meta property="og:image" content="https://dirochaaab.github.io/NOME-DO-REPOSITORIO/og-logo.jpg">
+<meta property="og:image" content="https://dirochaaab.github.io/EixoZ-Calculadora3D/og-logo.jpg">
 <meta property="og:image:type" content="image/jpeg">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
@@ -167,6 +166,8 @@ label.tog:has(input:checked){background:linear-gradient(135deg,var(--pink),var(-
 <button class="chip" data-v="60">60%</button>
 <button class="chip" data-v="80">80%</button>
 <button class="chip" data-v="100">100%</button>
+<button class="chip" data-v="200">200%</button>
+<button class="chip" data-v="300">300%</button>
 </div>
 <p class="hint tip">Uso normal: de 30% a 60%.</p>
 </section>
@@ -220,6 +221,9 @@ label.tog:has(input:checked){background:linear-gradient(135deg,var(--pink),var(-
 <label for="pz">Prazo para ficar pronto (opcional)</label>
 <div class="pchips"><button type="button" class="pch" id="pzh" data-p="">Tempo de impressão</button><button type="button" class="pch" data-p="3 dias">3 dias</button></div>
 <div class="in"><input id="pz" placeholder="Ou digite: 5 dias, 2 semanas..." autocomplete="off"></div>
+<label>Enviar direto para o cliente</label>
+<div class="pchips"><button type="button" class="pch" id="sendwa">WhatsApp</button><button type="button" class="pch" id="sendig">Instagram</button></div>
+<p class="hint">Abre o menu de compartilhar do celular com o orçamento pronto. No WhatsApp vai o PDF. No Instagram vai uma imagem do orçamento.</p>
 <p class="hint tip" id="pdfmsg" hidden></p>
 <div class="acts"><button type="button" class="pch" id="cancelpdf">Cancelar</button><button type="button" class="pdfbtn" id="makepdf">Gerar PDF</button></div>
 </div></div>
@@ -322,45 +326,92 @@ async function salvar(blob,nome){
   const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=nome;
   document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),5000);
 }
-$('makepdf').onclick=async()=>{
-  const msg=$('pdfmsg'),nome=$('nm').value.trim(),btn=$('makepdf');
-  const erro=t=>{msg.textContent=t;msg.hidden=false;};
-  if(!nome)return erro('Digite o nome da peça.');
-  if(!(FINAL>0))return erro('Preencha os dados da calculadora antes de gerar o orçamento.');
-  if(!(window.jspdf&&window.jspdf.jsPDF))return erro('Não foi possível carregar o gerador de PDF. Verifique a internet e tente de novo.');
-  msg.hidden=true;btn.disabled=true;
-  try{
-    const [lg,ft]=await Promise.all([lerImg($('lg').files[0],true),lerImg($('ft').files[0],false)]);
-    const doc=new window.jspdf.jsPDF({unit:'mm',format:'a4'}),W=210,M=18;
-    doc.setFillColor(255,46,115);doc.rect(0,0,W,4,'F');
-    doc.setFillColor(255,138,31);doc.rect(0,4,W,1.5,'F');
-    doc.setFillColor(30,180,255);doc.rect(0,5.5,W,1.5,'F');
-    if(lg){const[w,h]=fit(lg,55,28);doc.addImage(lg.d,'PNG',M,14,w,h);}
-    doc.setTextColor(21,18,46);doc.setFont('helvetica','bold');doc.setFontSize(24);doc.text('ORÇAMENTO',W-M,26,{align:'right'});
-    doc.setFont('helvetica','normal');doc.setFontSize(10);doc.setTextColor(93,90,120);
-    doc.text(new Date().toLocaleDateString('pt-BR'),W-M,33,{align:'right'});
-    doc.setDrawColor(255,46,115);doc.setLineWidth(.8);doc.line(M,48,W-M,48);
-    let y=62;doc.setTextColor(21,18,46);doc.setFont('helvetica','bold');doc.setFontSize(20);
-    const ls=doc.splitTextToSize(nome,W-2*M);doc.text(ls,M,y);y+=ls.length*8+2;
-    if(ft){const[w,h]=fit(ft,W-2*M,85);doc.addImage(ft.d,'JPEG',(W-w)/2,y,w,h);y+=h+8;}
-    doc.setFontSize(12);
-    const det=(k,v)=>{if(!v)return;doc.setFont('helvetica','bold');doc.text(k+':',M,y);
-      doc.setFont('helvetica','normal');const l=doc.splitTextToSize(v,W-2*M-44);doc.text(l,M+44,y);y+=l.length*6+3;};
-    det('Tamanho da peça',$('tm').value.trim());det('Prazo',$('pz').value.trim());
-    y+=6;
-    doc.setFillColor(255,247,224);doc.setDrawColor(21,18,46);doc.setLineWidth(.8);
-    doc.roundedRect(M,y,W-2*M,42,3,3,'FD');
-    doc.setFont('helvetica','bold');doc.setFontSize(11);doc.setTextColor(93,90,120);doc.text('VALOR',M+8,y+11);
-    doc.setFontSize(36);doc.setTextColor(216,27,96);
-    doc.text(brl(FINAL).replace(/\u00a0/g,' '),W/2,y+31,{align:'center'});
-    doc.setFont('helvetica','normal');doc.setFontSize(10);doc.setTextColor(93,90,120);
-    doc.text('Obrigado pela preferência!',W/2,285,{align:'center'});
-    const slug=nome.normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-zA-Z0-9]+/g,'-').replace(/^-|-$/g,'').toLowerCase()||'peca';
-    await salvar(doc.output('blob'),'orcamento-'+slug+'.pdf');
-    ov.hidden=true;
-  }catch(e){if(!e||e.code!=='declined')erro('Não foi possível salvar o PDF. Tente de novo.');}
-  btn.disabled=false;
-};
+const FONTE='Helvetica,Arial,sans-serif';
+function aviso(t,html){const m=$('pdfmsg');m[html?'innerHTML':'textContent']=t;m.hidden=false;}
+async function coletar(){
+  const nome=$('nm').value.trim();
+  if(!nome){aviso('Digite o nome da peça.');return null;}
+  if(!(FINAL>0)){aviso('Preencha os dados da calculadora antes de gerar o orçamento.');return null;}
+  $('pdfmsg').hidden=true;
+  const [lg,ft]=await Promise.all([lerImg($('lg').files[0],true),lerImg($('ft').files[0],false)]);
+  return {nome,tm:$('tm').value.trim(),pz:$('pz').value.trim(),lg,ft,valor:brl(FINAL).replace(/\u00a0/g,' ')};
+}
+function arquivo(d,ext){return 'Orçamento - '+(d.nome.replace(/[\\\/:*?"<>|]+/g,' ').replace(/\s+/g,' ').trim().slice(0,60)||'peça')+'.'+ext;}
+function criarPDF(d){
+  if(!(window.jspdf&&window.jspdf.jsPDF))throw {code:'nolib'};
+  const doc=new window.jspdf.jsPDF({unit:'mm',format:'a4'}),W=210,M=18;
+  doc.setFillColor(255,46,115);doc.rect(0,0,W,4,'F');
+  doc.setFillColor(255,138,31);doc.rect(0,4,W,1.5,'F');
+  doc.setFillColor(30,180,255);doc.rect(0,5.5,W,1.5,'F');
+  if(d.lg){const[w,h]=fit(d.lg,55,28);doc.addImage(d.lg.d,'PNG',M,14,w,h);}
+  doc.setTextColor(21,18,46);doc.setFont('helvetica','bold');doc.setFontSize(24);doc.text('ORÇAMENTO',W-M,26,{align:'right'});
+  doc.setFont('helvetica','normal');doc.setFontSize(10);doc.setTextColor(93,90,120);
+  doc.text(new Date().toLocaleDateString('pt-BR'),W-M,33,{align:'right'});
+  doc.setDrawColor(255,46,115);doc.setLineWidth(.8);doc.line(M,48,W-M,48);
+  let y=62;doc.setTextColor(21,18,46);doc.setFont('helvetica','bold');doc.setFontSize(20);
+  const ls=doc.splitTextToSize(d.nome,W-2*M);doc.text(ls,M,y);y+=ls.length*8+2;
+  if(d.ft){const[w,h]=fit(d.ft,W-2*M,85);doc.addImage(d.ft.d,'JPEG',(W-w)/2,y,w,h);y+=h+8;}
+  doc.setFontSize(12);
+  const det=(k,v)=>{if(!v)return;doc.setFont('helvetica','bold');doc.text(k+':',M,y);
+    doc.setFont('helvetica','normal');const l=doc.splitTextToSize(v,W-2*M-44);doc.text(l,M+44,y);y+=l.length*6+3;};
+  det('Tamanho da peça',d.tm);det('Prazo',d.pz);
+  y+=6;
+  doc.setFillColor(255,247,224);doc.setDrawColor(21,18,46);doc.setLineWidth(.8);
+  doc.roundedRect(M,y,W-2*M,42,3,3,'FD');
+  doc.setFont('helvetica','bold');doc.setFontSize(11);doc.setTextColor(93,90,120);doc.text('VALOR',M+8,y+11);
+  doc.setFontSize(36);doc.setTextColor(216,27,96);doc.text(d.valor,W/2,y+31,{align:'center'});
+  doc.setFont('helvetica','normal');doc.setFontSize(10);doc.setTextColor(93,90,120);
+  doc.text('Obrigado pela preferência!',W/2,285,{align:'center'});
+  return doc.output('blob');
+}
+function imgEl(o){return new Promise(r=>{if(!o)return r(null);const i=new Image();i.onload=()=>r(i);i.onerror=()=>r(null);i.src=o.d;});}
+function quebra(x,t,mw){const l=[];let c='';for(const w of t.split(' ')){const s=c?c+' '+w:w;if(x.measureText(s).width>mw&&c){l.push(c);c=w;}else c=s;}if(c)l.push(c);return l;}
+async function criarImagem(d){
+  const [li,fi]=await Promise.all([imgEl(d.lg),imgEl(d.ft)]);
+  const W=1080,H=1350,M=70,c=document.createElement('canvas');c.width=W;c.height=H;const x=c.getContext('2d');
+  const ajusta=(o,mw,mh)=>{const k=Math.min(mw/o.width,mh/o.height);return[o.width*k,o.height*k];};
+  x.fillStyle='#fffaf0';x.fillRect(0,0,W,H);
+  x.fillStyle='#ff2e73';x.fillRect(0,0,W,22);x.fillStyle='#ff8a1f';x.fillRect(0,22,W,8);x.fillStyle='#1eb4ff';x.fillRect(0,30,W,8);
+  if(li){const[w,h]=ajusta(li,280,150);x.drawImage(li,M,80,w,h);}
+  x.textAlign='right';x.fillStyle='#15122e';x.font='bold 64px '+FONTE;x.fillText('ORÇAMENTO',W-M,140);
+  x.fillStyle='#5d5a78';x.font='30px '+FONTE;x.fillText(new Date().toLocaleDateString('pt-BR'),W-M,190);
+  x.textAlign='left';x.fillStyle='#ff2e73';x.fillRect(M,250,W-2*M,5);
+  let y=330;x.fillStyle='#15122e';x.font='bold 56px '+FONTE;
+  for(const l of quebra(x,d.nome,W-2*M).slice(0,2)){x.fillText(l,M,y);y+=66;}
+  if(fi){const[w,h]=ajusta(fi,W-2*M,420);x.drawImage(fi,(W-w)/2,y,w,h);y+=h+40;}
+  for(const[k,v] of [['Tamanho da peça',d.tm],['Prazo',d.pz]]){if(!v)continue;
+    x.fillStyle='#15122e';x.font='bold 34px '+FONTE;x.fillText(k+': ',M,y);
+    const kw=x.measureText(k+': ').width;x.font='34px '+FONTE;x.fillText(v,M+kw,y);y+=50;}
+  y+=20;
+  x.fillStyle='#fff3d6';x.strokeStyle='#15122e';x.lineWidth=5;x.beginPath();
+  if(x.roundRect)x.roundRect(M,y,W-2*M,200,16);else x.rect(M,y,W-2*M,200);
+  x.fill();x.stroke();
+  x.fillStyle='#5d5a78';x.font='bold 30px '+FONTE;x.fillText('VALOR',M+30,y+50);
+  x.textAlign='center';x.fillStyle='#d81b60';x.font='bold 110px '+FONTE;x.fillText(d.valor,W/2,y+160);
+  x.fillStyle='#5d5a78';x.font='30px '+FONTE;x.fillText('Obrigado pela preferência!',W/2,H-50);
+  return new Promise(r=>c.toBlob(r,'image/jpeg',.9));
+}
+async function enviar(blob,nome,tipo,texto,url,app){
+  const f=new File([blob],nome,{type:tipo});
+  if(navigator.canShare&&navigator.canShare({files:[f]})){
+    try{await navigator.share({files:[f],title:nome,text:texto});return;}
+    catch(e){if(e&&e.name==='AbortError')return;}
+  }
+  await salvar(blob,nome);
+  aviso('Arquivo salvo. <a href="'+url+'" target="_blank" rel="noopener">Toque aqui para abrir o '+app+'</a> e anexe o orçamento.',true);
+}
+function roda(id,fn){$(id).onclick=async()=>{
+  const b=$(id);b.disabled=true;
+  try{const d=await coletar();if(d)await fn(d);}
+  catch(e){if(e&&e.code==='nolib')aviso('Não foi possível carregar o gerador de PDF. Verifique a internet e tente de novo.');
+    else if(!e||e.code!=='declined')aviso('Não foi possível concluir. Tente de novo.');}
+  b.disabled=false;};}
+roda('makepdf',async d=>{await salvar(criarPDF(d),arquivo(d,'pdf'));ov.hidden=true;});
+roda('sendwa',async d=>{
+  const t='Orçamento: '+d.nome+(d.pz?' | Prazo: '+d.pz:'')+' | Valor: '+d.valor;
+  await enviar(criarPDF(d),arquivo(d,'pdf'),'application/pdf',t,'https://wa.me/?text='+encodeURIComponent(t),'WhatsApp');});
+roda('sendig',async d=>{
+  await enviar(await criarImagem(d),arquivo(d,'jpg'),'image/jpeg','Orçamento: '+d.nome,'https://www.instagram.com/direct/inbox/','Instagram');});
 </script>
 </body>
 </html>

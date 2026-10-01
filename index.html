@@ -109,7 +109,7 @@ label.tog:has(input:checked){background:linear-gradient(135deg,var(--pink),var(-
 <div class="pchips" style="margin:12px 0 0"><button type="button" class="pch" id="pryes">Sim, arredondar</button><button type="button" class="pch" id="prno">Não, usar os valores lidos</button></div>
 </div>
 <p class="hint tip" id="prout" hidden></p>
-<p class="hint">Envie o print do MakerWorld com o tempo e o gasto total, ou uma foto da tela do fatiador no computador. A calculadora preenche as gramas e o tempo e coloca a margem de lucro em 100%. Tudo pode ser alterado depois. Atenção: o MakerWorld mostra o tempo em horas decimais, então 8,9h é 8h54, e não 8h09.</p>
+<p class="hint">Envie o print do MakerWorld com o tempo e o gasto total, ou uma foto da tela do fatiador no computador. A calculadora preenche as gramas e o tempo, escolhe a mão de obra e os custos fixos sugeridos e coloca a margem de lucro em 100%. Tudo pode ser alterado depois. Atenção: o MakerWorld mostra o tempo em horas decimais, então 8,9h é 8h54, e não 8h09.</p>
 <p class="hint tip">Preenchimento automático ainda em testes, revise sempre os valores.</p>
 </section>
 
@@ -521,10 +521,11 @@ async function processar(f,arred){
       if(a.g!==null)$('gramas').value=String(a.g).replace('.',',');
       if(a.min!==null){$('horas').value=Math.floor(a.min/60)||'';$('minutos').value=a.min%60||'';}
       $('margem').value='100';
+      for(const k in T){const c=T[k],xv=c.x(),si=xv>0?c.t.findIndex(r2=>xv<=r2[1]):-1;if(si>=0)$(c.inp).value=fmt(c.t[si][2](xv));}
       calc();
       const gt=x=>x.g===null?'peso não encontrado':String(x.g).replace('.',',')+' g';
       const tt=x=>x.min===null?'tempo não encontrado':Math.floor(x.min/60)+'h'+String(x.min%60).padStart(2,'0');
-      o.textContent='Li: '+gt(r)+' e '+tt(r)+'.'+(arred?' Com folga: '+gt(a)+' e '+tt(a)+'.':'')+' Margem de lucro em 100%. Confira e altere o que precisar.'+cc.txt+av;
+      o.textContent='Li: '+gt(r)+' e '+tt(r)+'.'+(arred?' Com folga: '+gt(a)+' e '+tt(a)+'.':'')+' Mão de obra e custos fixos pelas faixas sugeridas e margem de lucro em 100%. Confira e altere o que precisar.'+cc.txt+av;
     }
   }catch(e){o.textContent=e&&e.code==='ocrlib'?'Não foi possível carregar o leitor de imagem. Verifique a internet e tente de novo.'
     :e&&e.code==='timeout'?'Demorou demais. Tente de novo ou digite os valores manualmente.'

@@ -464,6 +464,18 @@ $('pr').onchange=()=>{
   const f=$('pr').files[0];if(!f)return;
   arq=f;$('prout').hidden=true;$('prask').hidden=false;$('pr').value='';
 };
+const hm=m=>Math.floor(m/60)+'h'+String(m%60).padStart(2,'0');
+function corrigeTempo(r){
+  if(r.min===null||r.g===null)return {r,txt:''};
+  const h=r.min/60;
+  if(h<10||r.g/h>=4)return {r,txt:''};
+  const s=(Math.round(h*10)/10).toString();
+  if(s.length<2)return {r,txt:''};
+  const nh=parseFloat(s.slice(1));
+  if(!(nh>0)||r.g/nh<4||r.g/nh>150)return {r,txt:''};
+  const nm=Math.round(nh*60);
+  return {r:{g:r.g,min:nm},txt:' O tempo lido ('+hm(r.min)+') era alto demais para '+String(r.g).replace('.',',')+' g, então usei '+hm(nm)+'. Confira.'};
+}
 async function processar(f,arred){
   const o=$('prout'),b=$('prbtn');
   $('prask').hidden=true;o.hidden=false;b.disabled=true;
@@ -474,24 +486,34 @@ async function processar(f,arred){
     const w=await Tesseract.createWorker('eng',1,{logger:m=>{if(m.status==='recognizing text')o.textContent='Lendo a imagem... '+Math.round(m.progress*100)+'%';}});
     await w.setParameters({tessedit_pageseg_mode:'11'});
     const {data}=await w.recognize(cv);
-    let texto=data.text;
+    let texto=data.text,n2=0;
     for(const p of (data.words||[])){
       const tk=p.text.trim();
-      if(!/^\d+h$/i.test(tk))continue;
-      const b=p.bbox,m=Math.round((b.y1-b.y0)*.6);
-      const x0=Math.max(0,b.x0-m),y0=Math.max(0,b.y0-m),cw=Math.min(cv.width,b.x1+m)-x0,ch=Math.min(cv.height,b.y1+m)-y0;
-      const z=document.createElement('canvas');z.width=cw*4+60;z.height=ch*4+60;
+      if(!/^\d+[hg]$/i.test(tk)||n2++>=8)continue;
+      const b=p.bbox,H=b.y1-b.y0,my=Math.round(H*.15),mx=Math.round(H*.1);
+      const x0=Math.max(0,b.x0-mx),y0=Math.max(0,b.y0-my),cw=Math.min(cv.width,b.x1+mx)-x0,ch=Math.min(cv.height,b.y1+my)-y0;
+      if(cw<5||ch<5)continue;
+      const t=document.createElement('canvas');t.width=cw;t.height=ch;
+      const tx=t.getContext('2d');tx.drawImage(cv,x0,y0,cw,ch,0,0,cw,ch);
+      const dd=tx.getImageData(0,0,cw,ch).data,col=new Array(cw).fill(0);
+      for(let yy=0;yy<ch;yy++)for(let xx=0;xx<cw;xx++)if(dd[(yy*cw+xx)*4]<128)col[xx]++;
+      let q=0;while(q<cw&&!col[q])q++;
+      let corte=q;
+      while(q<cw*.5){while(q<cw&&col[q])q++;const g0=q;while(q<cw&&!col[q])q++;if(q-g0>=H*.2&&q<cw){corte=q;break;}}
+      const w2=cw-corte;
+      const z=document.createElement('canvas');z.width=w2*4+60;z.height=ch*4+60;
       const zx=z.getContext('2d');zx.fillStyle='#fff';zx.fillRect(0,0,z.width,z.height);
-      zx.imageSmoothingQuality='high';zx.drawImage(cv,x0,y0,cw,ch,30,30,cw*4,ch*4);
-      await w.setParameters({tessedit_pageseg_mode:'7',tessedit_char_whitelist:'0123456789.,hdmin'});
+      zx.imageSmoothingQuality='high';zx.drawImage(t,corte,0,w2,ch,30,30,w2*4,ch*4);
+      await w.setParameters({tessedit_pageseg_mode:'7',tessedit_char_whitelist:'0123456789.,hdming'});
       const r2=await w.recognize(z);
       const novo=r2.data.text.trim().replace(/\s+/g,'');
-      if(/^\d+[.,]\d+h$/i.test(novo))texto=texto.replace(tk,novo);
+      if(novo!==tk&&/^\d+([.,]\d+)?[hg]$/i.test(novo)&&novo.slice(-1).toLowerCase()===tk.slice(-1).toLowerCase())texto=texto.replace(tk,novo);
     }
     await w.terminate();
     return lerTempoPeso(texto);};
   try{
-    const r=await Promise.race([ler(),new Promise((_,no)=>setTimeout(()=>no({code:'timeout'}),90000))]);
+    const r0=await Promise.race([ler(),new Promise((_,no)=>setTimeout(()=>no({code:'timeout'}),90000))]);
+    const cc=corrigeTempo(r0),r=cc.r;
     if(r.min===null&&r.g===null){o.textContent='Não consegui encontrar o tempo nem o peso nessa imagem. Tente um print mais nítido ou digite manualmente.';}
     else{
       const a=arred?folga(r):r;
@@ -502,7 +524,7 @@ async function processar(f,arred){
       calc();
       const gt=x=>x.g===null?'peso não encontrado':String(x.g).replace('.',',')+' g';
       const tt=x=>x.min===null?'tempo não encontrado':Math.floor(x.min/60)+'h'+String(x.min%60).padStart(2,'0');
-      o.textContent='Li: '+gt(r)+' e '+tt(r)+'.'+(arred?' Com folga: '+gt(a)+' e '+tt(a)+'.':'')+' Margem de lucro em 100%. Confira e altere o que precisar.'+av;
+      o.textContent='Li: '+gt(r)+' e '+tt(r)+'.'+(arred?' Com folga: '+gt(a)+' e '+tt(a)+'.':'')+' Margem de lucro em 100%. Confira e altere o que precisar.'+cc.txt+av;
     }
   }catch(e){o.textContent=e&&e.code==='ocrlib'?'Não foi possível carregar o leitor de imagem. Verifique a internet e tente de novo.'
     :e&&e.code==='timeout'?'Demorou demais. Tente de novo ou digite os valores manualmente.'

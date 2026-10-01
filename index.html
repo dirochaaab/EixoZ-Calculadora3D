@@ -92,6 +92,8 @@ label.tog:has(input:checked){background:linear-gradient(135deg,var(--pink),var(-
 .pchips{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px}
 .acts{display:grid;grid-template-columns:1fr 1.6fr;gap:10px;margin-top:16px}
 .acts .pch{padding:12px;font-size:.9rem}
+.credit{text-align:center;color:var(--mut);font-size:.85rem;margin:0}
+.credit b{font:400 .85rem var(--disp);color:var(--hd);letter-spacing:.04em}
 </style>
 </head>
 <body>
@@ -107,7 +109,7 @@ label.tog:has(input:checked){background:linear-gradient(135deg,var(--pink),var(-
 <div class="pchips" style="margin:12px 0 0"><button type="button" class="pch" id="pryes">Sim, arredondar</button><button type="button" class="pch" id="prno">Não, usar os valores lidos</button></div>
 </div>
 <p class="hint tip" id="prout" hidden></p>
-<p class="hint">Envie o print do MakerWorld com o tempo e o gasto total, ou uma foto da tela do fatiador no computador. A calculadora preenche as gramas e o tempo e coloca a margem de lucro em 100%. Tudo pode ser alterado depois.</p>
+<p class="hint">Envie o print do MakerWorld com o tempo e o gasto total, ou uma foto da tela do fatiador no computador. A calculadora preenche as gramas e o tempo e coloca a margem de lucro em 100%. Tudo pode ser alterado depois. Atenção: o MakerWorld mostra o tempo em horas decimais, então 8,9h é 8h54, e não 8h09.</p>
 <p class="hint tip">Preenchimento automático ainda em testes, revise sempre os valores.</p>
 </section>
 
@@ -216,6 +218,7 @@ label.tog:has(input:checked){background:linear-gradient(135deg,var(--pink),var(-
 <a class="lnk" href="https://www.tiktok.com/@eixozgeek" target="_blank" rel="noopener">TikTok <b>@eixozgeek</b></a>
 </div>
 </section>
+<footer class="credit">Desenvolvido por <b>Diogo Rocha</b></footer>
 </main>
 <div class="ov" id="ov" hidden><div class="modal" role="dialog" aria-modal="true" aria-label="Gerar PDF de orçamento">
 <h2>Orçamento em PDF</h2>
@@ -424,6 +427,7 @@ roda('sendig',async d=>{
 function lerTempoPeso(txt){
   let t=String(txt).replace(/,(?=\d)/g,'.');
   const mins=[];
+  t=t.replace(/(?<![\d.])(\d+\.\d+)\s*h(?:ours?|oras?|rs?)?(?![a-z])/gi,(m,x)=>{mins.push(Math.round(parseFloat(x)*60));return ' ';});
   t=t.replace(/(?<![\d.])(?:(\d+)\s*d\s*)?(\d+)\s*h(?:ours?|oras?|rs?)?(?![a-z])\s*(?:(\d+)\s*m(?:ins?|inutos?)?(?![a-z]))?/gi,(m,d,h,mi)=>{
     mins.push((+d||0)*1440+(+h)*60+(+mi||0));return ' ';});
   t.replace(/(?<![\d.])(\d+)(?:\s*min(?:s|utos?)?|m)(?![a-z])/gi,(m,mi)=>{mins.push(+mi);return ' ';});
@@ -468,20 +472,37 @@ async function processar(f,arred){
     await carregarOCR();
     const cv=await prepara(f);
     const w=await Tesseract.createWorker('eng',1,{logger:m=>{if(m.status==='recognizing text')o.textContent='Lendo a imagem... '+Math.round(m.progress*100)+'%';}});
-    const {data}=await w.recognize(cv);await w.terminate();
-    return lerTempoPeso(data.text);};
+    await w.setParameters({tessedit_pageseg_mode:'11'});
+    const {data}=await w.recognize(cv);
+    let texto=data.text;
+    for(const p of (data.words||[])){
+      const tk=p.text.trim();
+      if(!/^\d+h$/i.test(tk))continue;
+      const b=p.bbox,m=Math.round((b.y1-b.y0)*.6);
+      const x0=Math.max(0,b.x0-m),y0=Math.max(0,b.y0-m),cw=Math.min(cv.width,b.x1+m)-x0,ch=Math.min(cv.height,b.y1+m)-y0;
+      const z=document.createElement('canvas');z.width=cw*4+60;z.height=ch*4+60;
+      const zx=z.getContext('2d');zx.fillStyle='#fff';zx.fillRect(0,0,z.width,z.height);
+      zx.imageSmoothingQuality='high';zx.drawImage(cv,x0,y0,cw,ch,30,30,cw*4,ch*4);
+      await w.setParameters({tessedit_pageseg_mode:'7',tessedit_char_whitelist:'0123456789.,hdmin'});
+      const r2=await w.recognize(z);
+      const novo=r2.data.text.trim().replace(/\s+/g,'');
+      if(/^\d+[.,]\d+h$/i.test(novo))texto=texto.replace(tk,novo);
+    }
+    await w.terminate();
+    return lerTempoPeso(texto);};
   try{
     const r=await Promise.race([ler(),new Promise((_,no)=>setTimeout(()=>no({code:'timeout'}),90000))]);
     if(r.min===null&&r.g===null){o.textContent='Não consegui encontrar o tempo nem o peso nessa imagem. Tente um print mais nítido ou digite manualmente.';}
     else{
       const a=arred?folga(r):r;
+      const hh=r.min!==null?r.min/60:0,av=(r.g!==null&&hh>=10&&r.g/hh<4)?' O tempo parece alto para essa quantidade de filamento, confira.':'';
       if(a.g!==null)$('gramas').value=String(a.g).replace('.',',');
       if(a.min!==null){$('horas').value=Math.floor(a.min/60)||'';$('minutos').value=a.min%60||'';}
       $('margem').value='100';
       calc();
       const gt=x=>x.g===null?'peso não encontrado':String(x.g).replace('.',',')+' g';
       const tt=x=>x.min===null?'tempo não encontrado':Math.floor(x.min/60)+'h'+String(x.min%60).padStart(2,'0');
-      o.textContent='Li: '+gt(r)+' e '+tt(r)+'.'+(arred?' Com folga: '+gt(a)+' e '+tt(a)+'.':'')+' Margem de lucro em 100%. Confira e altere o que precisar.';
+      o.textContent='Li: '+gt(r)+' e '+tt(r)+'.'+(arred?' Com folga: '+gt(a)+' e '+tt(a)+'.':'')+' Margem de lucro em 100%. Confira e altere o que precisar.'+av;
     }
   }catch(e){o.textContent=e&&e.code==='ocrlib'?'Não foi possível carregar o leitor de imagem. Verifique a internet e tente de novo.'
     :e&&e.code==='timeout'?'Demorou demais. Tente de novo ou digite os valores manualmente.'

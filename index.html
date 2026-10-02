@@ -426,16 +426,19 @@ roda('sendig',async d=>{
   await enviar(await criarImagem(d),arquivo(d,'jpg'),'image/jpeg','Orçamento: '+d.nome,'https://www.instagram.com/direct/inbox/','Instagram');});
 function lerTempoPeso(txt){
   let t=String(txt).replace(/,(?=\d)/g,'.');
+  const fixo=c=>({O:'0',o:'0',S:'5',s:'5',I:'1',l:'1','|':'1',B:'8'}[c]||c);
+  t=t.replace(/(?<![A-Za-z0-9])([0-9OoSsIl|]{1,3})[ \t]*h[ \t]*([0-9OoSsIlB|]{1,2})[ \t]*m(?![a-z])/g,(m,a,b)=>[...a].map(fixo).join('')+'h'+[...b].map(fixo).join('')+'m');
   const comH=[],mins=[];
-  t=t.replace(/(?<![\d.])(\d+\.\d+)\s*h(?:ours?|oras?|rs?)?(?![a-z])/gi,(m,x)=>{comH.push(Math.round(parseFloat(x)*60));return ' ';});
-  t=t.replace(/(?<![\d.])(?:(\d+)\s*d\s*)?(\d+)\s*h(?:ours?|oras?|rs?)?(?![a-z])\s*(?:(\d+)\s*m(?:ins?|inutos?)?(?![a-z]))?/gi,(m,d,h,mi)=>{
+  t=t.replace(/(?<![\d.])(\d+\.\d+)[ \t]*h(?:ours?|oras?|rs?)?(?![a-z])/gi,(m,x)=>{comH.push(Math.round(parseFloat(x)*60));return ' ';});
+  t=t.replace(/(?<![\d.])(?:(\d+)[ \t]*d[ \t]*)?(\d+)[ \t]*h(?:ours?|oras?|rs?)?(?![a-z])[ \t]*(?:(\d+)[ \t]*m(?:ins?|inutos?)?(?![a-z]))?/gi,(m,d,h,mi)=>{
     comH.push((+d||0)*1440+(+h)*60+(+mi||0));return ' ';});
-  t=t.replace(/(?<![\d.])([1-9]\d*)\s*m\s*\d+\s*s(?![a-z])/gi,(m,mi)=>{mins.push(+mi);return ' ';});
-  t=t.replace(/(?<![\d.])([1-9]\d*)\s*min(?:s|utos?)?(?![a-z])/gi,(m,mi)=>{mins.push(+mi);return ' ';});
+  t=t.replace(/(?<![\d.])\d+[ \t]*m[ \t]*\d+[ \t]*s(?![a-z])/gi,' ');
+  t=t.replace(/(?<![\d.])([1-9]\d*)[ \t]*min(?:s|utos?)?(?![a-z])/gi,(m,mi)=>{mins.push(+mi);return ' ';});
   t=t.replace(/(?<![\d.\w])([1-9]\d{0,2})m(?![a-z\d])/gi,(m,mi)=>{if(+mi<=300)mins.push(+mi);return ' ';});
   const pesos=[];
-  t.replace(/(?<![\d.])(\d+(?:\.\d+)?)\s*g(?![a-z])/gi,(m,g)=>{pesos.push(parseFloat(g));return m;});
-  const ok=a=>a.filter(x=>x>0&&x<=20160),tm=ok(comH).length?ok(comH):ok(mins),ps=pesos.filter(x=>x>=0.5&&x<=5000);
+  t.replace(/(?<![\d.])(\d+(?:\.\d+)?)[ \t]*g(?![a-z])/gi,(m,g)=>{pesos.push({v:parseFloat(g),d:g.includes('.')});return m;});
+  const ok=a=>a.filter(x=>x>0&&x<=20160),tm=ok(comH).length?ok(comH):ok(mins),pp=pesos.filter(x=>x.v>=0.5&&x.v<=5000);
+  const ps=(pp.filter(x=>x.d).length>=2?pp.filter(x=>x.d):pp).map(x=>x.v);
   return {min:tm.length?Math.max(...tm):null,g:ps.length?Math.max(...ps):null};
 }
 
@@ -477,14 +480,39 @@ const limpa=s=>s.trim().toLowerCase().replace(/[^a-z]/g,'');
 function rotuloTotal(ws){
   for(let i=0;i<ws.length-1;i++){
     const a=limpa(ws[i].text),b=limpa(ws[i+1].text);
-    if((a==='tempo'&&b==='total')||(a==='total'&&b==='time'))return ws[i+1];
+    if((/^temp/.test(a)&&/^tota/.test(b))||(/^tota/.test(a)&&/^tim/.test(b)))return ws[i+1];
   }
   return null;
 }
-function tempoNaLinha(ws,rot){
+function textoDireita(ws,rot){
   const H=rot.bbox.y1-rot.bbox.y0,yc=(rot.bbox.y0+rot.bbox.y1)/2;
-  const dir=ws.filter(p=>p!==rot&&p.bbox.x0>=rot.bbox.x1-2&&Math.abs((p.bbox.y0+p.bbox.y1)/2-yc)<H*.7).sort((a,b)=>a.bbox.x0-b.bbox.x0);
-  return lerTempoPeso(dir.map(p=>p.text).join(' ')).min;
+  return ws.filter(p=>p!==rot&&p.bbox.x0>=rot.bbox.x1-2&&Math.abs((p.bbox.y0+p.bbox.y1)/2-yc)<H*.7).sort((a,b)=>a.bbox.x0-b.bbox.x0).map(p=>p.text).join(' ');
+}
+function tempoNaLinha(ws,rot){return lerTempoPeso(textoDireita(ws,rot)).min;}
+function tempoModelo(ws){
+  for(const p of ws){
+    if(!/^model/.test(limpa(p.text)))continue;
+    const mi=lerTempoPeso(textoDireita(ws,p)).min;
+    if(mi!==null)return mi;
+  }
+  return null;
+}
+function minutosFinais(txt){
+  const t=txt.replace(/[Ss]/g,'5').replace(/[Oo]/g,'0').replace(/B/g,'8').replace(/[Il|]/g,'1');
+  const a=t.match(/(\d{2})\s*m\s*$/i)||t.match(/(\d{2})m/i);
+  if(a)return +a[1];
+  const b=t.match(/\d+/g);
+  return b&&b.length===1&&b[0].length===2?+b[0]:null;
+}
+function inferirTotal(ws,rot){
+  const mod=tempoModelo(ws);
+  if(mod===null)return null;
+  const mm=rot?minutosFinais(textoDireita(ws,rot)):null;
+  if(mm!==null&&mm<60){
+    let tot=Math.floor(mod/60)*60+mm;if(mm<mod%60)tot+=60;
+    if(tot-mod>=0&&tot-mod<=60)return {min:tot,nota:''};
+  }
+  return {min:mod,nota:' Não consegui ler o "Tempo total"; usei o tempo de impressão do modelo ('+hm(mod)+'). Some alguns minutos ou confira.'};
 }
 const hm=m=>Math.floor(m/60)+'h'+String(m%60).padStart(2,'0');
 function corrigeTempo(r){
@@ -550,12 +578,18 @@ async function processar(f,arred){
     }
     await w.terminate();
     const res=lerTempoPeso(texto);
+    let nota='';
+    const mod0=tempoModelo(ws);
+    if(tot!==null&&mod0!==null&&tot<mod0)tot=null;
+    if(tot===null){const inf=inferirTotal(ws,rot);if(inf&&(res.min===null||res.min<=inf.min)){tot=inf.min;nota=inf.nota;}}
     if(tot!==null)res.min=tot;
+    res.nota=nota;
     return res;};
 
   try{
     const r0=await Promise.race([ler(),new Promise((_,no)=>setTimeout(()=>no({code:'timeout'}),90000))]);
     const cc=corrigeTempo(r0),r=cc.r;
+    const nota=r0.nota||'';
     if(r.min===null&&r.g===null){o.textContent='Não consegui encontrar o tempo nem o peso nessa imagem. Tente um print mais nítido ou digite manualmente.';}
     else{
       const a=arred?folga(r):r;
@@ -567,7 +601,7 @@ async function processar(f,arred){
       calc();
       const gt=x=>x.g===null?'peso não encontrado':String(x.g).replace('.',',')+' g';
       const tt=x=>x.min===null?'tempo não encontrado':Math.floor(x.min/60)+'h'+String(x.min%60).padStart(2,'0');
-      o.textContent='Li: '+gt(r)+' e '+tt(r)+'.'+(arred?' Com folga: '+gt(a)+' e '+tt(a)+'.':'')+' Mão de obra e custos fixos pelas faixas sugeridas e margem de lucro em 100%. Confira e altere o que precisar.'+cc.txt+av;
+      o.textContent='Li: '+gt(r)+' e '+tt(r)+'.'+(arred?' Com folga: '+gt(a)+' e '+tt(a)+'.':'')+' Mão de obra e custos fixos pelas faixas sugeridas e margem de lucro em 100%. Confira e altere o que precisar.'+cc.txt+av+nota;
     }
   }catch(e){o.textContent=e&&e.code==='ocrlib'?'Não foi possível carregar o leitor de imagem. Verifique a internet e tente de novo.'
     :e&&e.code==='timeout'?'Demorou demais. Tente de novo ou digite os valores manualmente.'

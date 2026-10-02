@@ -464,6 +464,19 @@ $('pr').onchange=()=>{
   const f=$('pr').files[0];if(!f)return;
   arq=f;$('prout').hidden=true;$('prask').hidden=false;$('pr').value='';
 };
+const limpa=s=>s.trim().toLowerCase().replace(/[^a-z]/g,'');
+function rotuloTotal(ws){
+  for(let i=0;i<ws.length-1;i++){
+    const a=limpa(ws[i].text),b=limpa(ws[i+1].text);
+    if((a==='tempo'&&b==='total')||(a==='total'&&b==='time'))return ws[i+1];
+  }
+  return null;
+}
+function tempoNaLinha(ws,rot){
+  const H=rot.bbox.y1-rot.bbox.y0,yc=(rot.bbox.y0+rot.bbox.y1)/2;
+  const dir=ws.filter(p=>p!==rot&&p.bbox.x0>=rot.bbox.x1-2&&Math.abs((p.bbox.y0+p.bbox.y1)/2-yc)<H*.7).sort((a,b)=>a.bbox.x0-b.bbox.x0);
+  return lerTempoPeso(dir.map(p=>p.text).join(' ')).min;
+}
 const hm=m=>Math.floor(m/60)+'h'+String(m%60).padStart(2,'0');
 function corrigeTempo(r){
   if(r.min===null||r.g===null)return {r,txt:''};
@@ -509,15 +522,35 @@ async function processar(f,arred){
       const novo=r2.data.text.trim().replace(/\s+/g,'');
       if(novo!==tk&&/^\d+([.,]\d+)?[hg]$/i.test(novo)&&novo.slice(-1).toLowerCase()===tk.slice(-1).toLowerCase())texto=texto.replace(tk,novo);
     }
+    let tot=null;
+    const ws=(data.words||[]).filter(p=>p.text.trim());
+    const rot=rotuloTotal(ws);
+    if(rot){
+      tot=tempoNaLinha(ws,rot);
+      if(tot===null){
+        const H=rot.bbox.y1-rot.bbox.y0,x0=rot.bbox.x1,y0=Math.max(0,Math.round(rot.bbox.y0-H*.3));
+        const cw=Math.min(cv.width-x0,Math.round(H*14)),ch=Math.min(cv.height-y0,Math.round(H*1.6));
+        if(cw>10&&ch>10){
+          const z=document.createElement('canvas');z.width=cw*3+60;z.height=ch*3+60;
+          const zx=z.getContext('2d');zx.fillStyle='#fff';zx.fillRect(0,0,z.width,z.height);
+          zx.drawImage(cv,x0,y0,cw,ch,30,30,cw*3,ch*3);
+          await w.setParameters({tessedit_pageseg_mode:'7',tessedit_char_whitelist:'0123456789hms.,: '});
+          tot=lerTempoPeso((await w.recognize(z)).data.text).min;
+        }
+      }
+    }
     await w.terminate();
-    return lerTempoPeso(texto);};
+    const res=lerTempoPeso(texto);
+    if(tot!==null)res.min=tot;
+    return res;};
+
   try{
     const r0=await Promise.race([ler(),new Promise((_,no)=>setTimeout(()=>no({code:'timeout'}),90000))]);
     const cc=corrigeTempo(r0),r=cc.r;
     if(r.min===null&&r.g===null){o.textContent='Não consegui encontrar o tempo nem o peso nessa imagem. Tente um print mais nítido ou digite manualmente.';}
     else{
       const a=arred?folga(r):r;
-      const hh=r.min!==null?r.min/60:0,av=(r.g!==null&&hh>=10&&r.g/hh<4)?' O tempo parece alto para essa quantidade de filamento, confira.':'';
+      const hh=r.min!==null?r.min/60:0,av=(r.g!==null&&hh>0&&((hh>=10&&r.g/hh<4)||r.g/hh>150))?' O tempo parece '+(r.g/hh>150?'baixo':'alto')+' para essa quantidade de filamento, confira.':'';
       if(a.g!==null)$('gramas').value=String(a.g).replace('.',',');
       if(a.min!==null){$('horas').value=Math.floor(a.min/60)||'';$('minutos').value=a.min%60||'';}
       $('margem').value='100';

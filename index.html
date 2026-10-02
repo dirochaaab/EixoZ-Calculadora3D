@@ -426,14 +426,16 @@ roda('sendig',async d=>{
   await enviar(await criarImagem(d),arquivo(d,'jpg'),'image/jpeg','Orçamento: '+d.nome,'https://www.instagram.com/direct/inbox/','Instagram');});
 function lerTempoPeso(txt){
   let t=String(txt).replace(/,(?=\d)/g,'.');
-  const mins=[];
-  t=t.replace(/(?<![\d.])(\d+\.\d+)\s*h(?:ours?|oras?|rs?)?(?![a-z])/gi,(m,x)=>{mins.push(Math.round(parseFloat(x)*60));return ' ';});
+  const comH=[],mins=[];
+  t=t.replace(/(?<![\d.])(\d+\.\d+)\s*h(?:ours?|oras?|rs?)?(?![a-z])/gi,(m,x)=>{comH.push(Math.round(parseFloat(x)*60));return ' ';});
   t=t.replace(/(?<![\d.])(?:(\d+)\s*d\s*)?(\d+)\s*h(?:ours?|oras?|rs?)?(?![a-z])\s*(?:(\d+)\s*m(?:ins?|inutos?)?(?![a-z]))?/gi,(m,d,h,mi)=>{
-    mins.push((+d||0)*1440+(+h)*60+(+mi||0));return ' ';});
-  t.replace(/(?<![\d.])(\d+)(?:\s*min(?:s|utos?)?|m)(?![a-z])/gi,(m,mi)=>{mins.push(+mi);return ' ';});
+    comH.push((+d||0)*1440+(+h)*60+(+mi||0));return ' ';});
+  t=t.replace(/(?<![\d.])([1-9]\d*)\s*m\s*\d+\s*s(?![a-z])/gi,(m,mi)=>{mins.push(+mi);return ' ';});
+  t=t.replace(/(?<![\d.])([1-9]\d*)\s*min(?:s|utos?)?(?![a-z])/gi,(m,mi)=>{mins.push(+mi);return ' ';});
+  t=t.replace(/(?<![\d.\w])([1-9]\d{0,2})m(?![a-z\d])/gi,(m,mi)=>{if(+mi<=300)mins.push(+mi);return ' ';});
   const pesos=[];
   t.replace(/(?<![\d.])(\d+(?:\.\d+)?)\s*g(?![a-z])/gi,(m,g)=>{pesos.push(parseFloat(g));return m;});
-  const tm=mins.filter(x=>x>0&&x<=20160),ps=pesos.filter(x=>x>=0.5&&x<=5000);
+  const ok=a=>a.filter(x=>x>0&&x<=20160),tm=ok(comH).length?ok(comH):ok(mins),ps=pesos.filter(x=>x>=0.5&&x<=5000);
   return {min:tm.length?Math.max(...tm):null,g:ps.length?Math.max(...ps):null};
 }
 
@@ -445,12 +447,19 @@ function carregarOCR(){return new Promise((ok,no)=>{
 function prepara(file){return new Promise((ok,no)=>{
   const r=new FileReader();r.onerror=()=>no({});
   r.onload=()=>{const im=new Image();im.onerror=()=>no({});
-    im.onload=()=>{const k=Math.min(3,Math.max(.4,2000/im.width)),c=document.createElement('canvas');
-      c.width=Math.round(im.width*k);c.height=Math.round(im.height*k);
-      const x=c.getContext('2d');x.drawImage(im,0,0,c.width,c.height);
-      const d=x.getImageData(0,0,c.width,c.height),p=d.data;let soma=0;
-      for(let i=0;i<p.length;i+=4){const g=.299*p[i]+.587*p[i+1]+.114*p[i+2];p[i]=p[i+1]=p[i+2]=g;soma+=g;}
-      if(soma/(p.length/4)<115)for(let i=0;i<p.length;i+=4){p[i]=p[i+1]=p[i+2]=255-p[i];}
+    im.onload=()=>{
+      const k=Math.min(3,Math.max(.4,2000/im.width)),W=Math.round(im.width*k),H=Math.round(im.height*k);
+      const c=document.createElement('canvas');c.width=W;c.height=H;
+      const x=c.getContext('2d');x.drawImage(im,0,0,W,H);
+      const d=x.getImageData(0,0,W,H),p=d.data,N=W*H,g=new Float32Array(N);let soma=0;
+      for(let i=0;i<N;i++){const v=.299*p[i*4]+.587*p[i*4+1]+.114*p[i*4+2];g[i]=v;soma+=v;}
+      const claro=soma/N<128,R=25,T=18,W1=W+1,ii=new Float64Array(W1*(H+1));
+      for(let y=0;y<H;y++){let lin=0;for(let xx=0;xx<W;xx++){lin+=g[y*W+xx];ii[(y+1)*W1+xx+1]=ii[y*W1+xx+1]+lin;}}
+      for(let y=0;y<H;y++){const y0=Math.max(0,y-R),y1=Math.min(H,y+R+1);
+        for(let xx=0;xx<W;xx++){const x0=Math.max(0,xx-R),x1=Math.min(W,xx+R+1);
+          const s=ii[y1*W1+x1]-ii[y0*W1+x1]-ii[y1*W1+x0]+ii[y0*W1+x0];
+          const dif=g[y*W+xx]-s/((y1-y0)*(x1-x0)),tinta=claro?dif>T:dif<-T,o=(y*W+xx)*4;
+          p[o]=p[o+1]=p[o+2]=tinta?0:255;p[o+3]=255;}}
       x.putImageData(d,0,0);ok(c);};
     im.src=r.result;};
   r.readAsDataURL(file);});}
@@ -501,7 +510,7 @@ async function processar(f,arred){
     const {data}=await w.recognize(cv);
     let texto=data.text,n2=0;
     for(const p of (data.words||[])){
-      const tk=p.text.trim();
+      const tk=p.text.trim().replace(/^[^0-9a-z]+|[^0-9a-z]+$/gi,'');
       if(!/^\d+[hg]$/i.test(tk)||n2++>=8)continue;
       const b=p.bbox,H=b.y1-b.y0,my=Math.round(H*.15),mx=Math.round(H*.1);
       const x0=Math.max(0,b.x0-mx),y0=Math.max(0,b.y0-my),cw=Math.min(cv.width,b.x1+mx)-x0,ch=Math.min(cv.height,b.y1+my)-y0;
@@ -529,7 +538,7 @@ async function processar(f,arred){
       tot=tempoNaLinha(ws,rot);
       if(tot===null){
         const H=rot.bbox.y1-rot.bbox.y0,x0=rot.bbox.x1,y0=Math.max(0,Math.round(rot.bbox.y0-H*.3));
-        const cw=Math.min(cv.width-x0,Math.round(H*14)),ch=Math.min(cv.height-y0,Math.round(H*1.6));
+        const cw=Math.min(cv.width-x0,Math.round(H*18)),ch=Math.min(cv.height-y0,Math.round(H*1.6));
         if(cw>10&&ch>10){
           const z=document.createElement('canvas');z.width=cw*3+60;z.height=ch*3+60;
           const zx=z.getContext('2d');zx.fillStyle='#fff';zx.fillRect(0,0,z.width,z.height);

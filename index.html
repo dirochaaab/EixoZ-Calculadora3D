@@ -619,7 +619,7 @@ async function lerUma(w,cv){
     let texto=data.text,n2=0;
     for(const p of (data.words||[])){
       const tk=p.text.trim().replace(/^[^0-9a-z]+|[^0-9a-z]+$/gi,'');
-      if(!/^\d+[hg]$/i.test(tk)||n2++>=8)continue;
+      if(!/^\d+h$/i.test(tk)||n2++>=8)continue;
       const b=p.bbox,H=b.y1-b.y0,my=Math.round(H*.15),mx=Math.round(H*.1);
       const x0=Math.max(0,b.x0-mx),y0=Math.max(0,b.y0-my),cw=Math.min(cv.width,b.x1+mx)-x0,ch=Math.min(cv.height,b.y1+my)-y0;
       if(cw<5||ch<5)continue;
@@ -690,7 +690,7 @@ async function processar(f,arred){
       }
     }
     await w.terminate();
-    if(melhor&&melhor.via!=='rótulo'&&pesos.length)melhor.g=Math.max(...pesos);
+    if(melhor&&melhor.g===null&&pesos.length)melhor.g=Math.max(...pesos);
     return melhor||{min:null,g:null,nota:''};};
 
   try{

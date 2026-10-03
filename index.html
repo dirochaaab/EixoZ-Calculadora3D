@@ -94,6 +94,15 @@ label.tog:has(input:checked){background:linear-gradient(135deg,var(--pink),var(-
 .acts .pch{padding:12px;font-size:.9rem}
 .credit{text-align:center;color:var(--mut);font-size:.85rem;margin:0}
 .credit b{font:400 .85rem var(--disp);color:var(--hd);letter-spacing:.04em}
+.hrow{padding:12px 0;border-bottom:2px dashed var(--line)}
+.hrow:last-child{border-bottom:0}
+.hrow b{display:block}
+.hrow .hm{color:var(--mut);font-size:.82rem;margin:2px 0 6px}
+.hrow .hv{font:400 1.05rem var(--disp);color:var(--hd);margin-bottom:8px}
+.hrow .hb{display:flex;gap:8px;flex-wrap:wrap}
+#histlimpa{margin-top:12px}
+#fixonota .pch{margin-top:8px}
+#lgnota .pch{margin-top:8px}
 </style>
 </head>
 <body>
@@ -170,6 +179,9 @@ label.tog:has(input:checked){background:linear-gradient(135deg,var(--pink),var(-
 <div class="in"><input id="fixos" inputmode="decimal" value="2,00"><span>R$</span></div>
 <p class="hint">Desgaste de bico, correias e motores, mais manutenção. Cresce com o tempo de impressão. Toque numa faixa ou digite o valor.</p>
 <div class="tiers" id="tfx"></div>
+<label for="frete">Embalagem e frete por peça (opcional)</label>
+<div class="in"><input id="frete" inputmode="decimal" placeholder="0,00"><span>R$</span></div>
+<p class="hint">Caixa, fita, etiqueta e o frete. É somado ao preço sem receber margem de lucro.</p>
 <label for="margem">Margem de lucro</label>
 <div class="in"><input id="margem" inputmode="decimal" value="30"><span>%</span></div>
 <div class="chips" data-t="margem">
@@ -222,6 +234,13 @@ label.tog:has(input:checked){background:linear-gradient(135deg,var(--pink),var(-
 <button type="button" class="pdfbtn" id="openpdf">Gerar PDF de orçamento</button>
 <p class="hint">Cria um orçamento com o valor final, pronto para enviar ao cliente.</p>
 </section>
+<section id="histsec">
+<h2>Orçamentos anteriores</h2>
+<p class="hint" id="histvazio">Nenhum orçamento ainda. Os que você gerar aparecem aqui, guardados só neste aparelho.</p>
+<div id="hist"></div>
+<button type="button" class="pch" id="histlimpa" hidden>Limpar histórico</button>
+</section>
+
 <section class="follow">
 <h2>Curtiu?</h2>
 <p>Se essa calculadora te ajudou a fechar o preço das suas peças, retribui com um carinho: segue a gente! É só tocar num botão e acompanhar as nossas páginas e as novidades. Valeu por passar por aqui!</p>
@@ -237,6 +256,7 @@ label.tog:has(input:checked){background:linear-gradient(135deg,var(--pink),var(-
 <h2>Orçamento em PDF</h2>
 <label for="lg">Logo da sua loja (opcional)</label>
 <input type="file" id="lg" accept="image/*">
+<p class="hint" id="lgnota" hidden>Há uma logo salva neste aparelho e ela é usada se você não escolher outra. <button type="button" class="pch" id="lgesq">Esquecer logo salva</button></p>
 <label for="nm">Nome da peça</label>
 <div class="in"><input id="nm" placeholder="Ex.: Suporte de headset" autocomplete="off"></div>
 <label for="ft">Foto da peça (opcional)</label>
@@ -246,6 +266,14 @@ label.tog:has(input:checked){background:linear-gradient(135deg,var(--pink),var(-
 <label for="pz">Prazo para ficar pronto (opcional)</label>
 <div class="pchips"><button type="button" class="pch" id="pzh" data-p="">Tempo de impressão</button><button type="button" class="pch" data-p="3 dias">3 dias</button></div>
 <div class="in"><input id="pz" placeholder="Ou digite: 5 dias, 2 semanas..." autocomplete="off"></div>
+<label for="cl">Nome do cliente (opcional)</label>
+<div class="in"><input id="cl" placeholder="Ex.: Maria Souza" autocomplete="off"></div>
+<label for="vl">Validade do orçamento (opcional)</label>
+<div class="pchips"><button type="button" class="pch" data-v="7 dias">7 dias</button><button type="button" class="pch" data-v="15 dias">15 dias</button></div>
+<div class="in"><input id="vl" placeholder="Ou digite: 10 dias, até 30/10..." autocomplete="off"></div>
+<label for="ct">Seu contato (opcional)</label>
+<div class="in"><input id="ct" placeholder="Ex.: WhatsApp (11) 99999-9999 · @eixozgeek" autocomplete="off"></div>
+<p class="hint tip" id="fixonota" hidden></p>
 <label>Enviar direto para o cliente</label>
 <div class="pchips"><button type="button" class="pch" id="sendwa">WhatsApp</button><button type="button" class="pch" id="sendig">Instagram</button></div>
 <p class="hint">Abre o menu de compartilhar do celular com o orçamento pronto. No WhatsApp vai o PDF. No Instagram vai uma imagem do orçamento.</p>
@@ -264,7 +292,7 @@ const $=id=>document.getElementById(id);
 const n=id=>parseFloat(String($(id).value).replace(',','.'))||0;
 const brl=v=>v.toLocaleString('pt-BR',{style:'currency',currency:'BRL'});
 const fmt=v=>v.toFixed(2).replace('.',',');
-const cores=['#ff2e73','#1eb4ff','#ff8a1f','#7c5cd6','#8a86ad'];
+const cores=['#ff2e73','#1eb4ff','#ff8a1f','#7c5cd6','#8a86ad','#2fc9a0'];
 const T={
  mo:{el:'tmo',inp:'mo',x:()=>n('gramas'),t:[
   ['Até 100g',100,()=>2],['De 101g a 200g',200,()=>4],['De 201g a 300g',300,()=>6],
@@ -289,11 +317,12 @@ function calc(){
     ['Energia',n('watts')/1000*h*kwh],
     ['Desgaste da impressora',n('vida')>0?n('maquina')/n('vida')*h:0],
     ['Mão de obra',n('mo')],
-    ['Custos fixos',n('fixos')]
+    ['Custos fixos',n('fixos')],
+    ['Embalagem e frete',n('frete')]
   ];
   const mult=$('multi').checked,qtd=mult?Math.max(1,Math.floor(n('qtd'))):1;
   const faixa=qtd>30?70:qtd>20?80:qtd>10?90:null,mg=n('margem'),mgEf=faixa!==null?Math.min(mg,faixa):mg;
-  const custo=itens.reduce((s,i)=>s+i[1],0), lucro=custo*mgEf/100, liquido=custo+lucro;
+  const custo=itens.reduce((s,i)=>s+i[1],0), lucro=(custo-n('frete'))*mgEf/100, liquido=custo+lucro;
   const on=$('shopee').checked, shopee=(liquido+4)/0.80, base=on?shopee:liquido, d=n('desc');
   const tabela=d>0&&d<100?base/(1-d/100):0;
   $('kwh').textContent='R$ '+kwh.toFixed(4).replace('.',',');
@@ -332,10 +361,10 @@ calc();
 const ov=$('ov');
 function tempoTxt(){const h=Math.floor(n('horas')),m=Math.round(n('minutos'));
   if(!h&&!m)return '';return h?h+'h'+(m?String(m).padStart(2,'0'):''):m+' min';}
-$('openpdf').onclick=()=>{
+$('openpdf').onclick=()=>{valorFixo=null;$('fixonota').hidden=true;
   const t=tempoTxt(),b=$('pzh');
   b.textContent='Tempo de impressão ('+t+')';b.dataset.p=t;b.hidden=!t;
-  $('pdfmsg').hidden=true;ov.hidden=false;};
+  $('pdfmsg').hidden=true;ov.hidden=false;atualizaLogoNota();};
 $('cancelpdf').onclick=()=>{ov.hidden=true};
 ov.addEventListener('click',e=>{if(e.target===ov)ov.hidden=true});
 document.querySelectorAll('.pch[data-p]').forEach(b=>b.onclick=()=>{$('pz').value=b.dataset.p;});
@@ -360,13 +389,20 @@ async function salvar(blob,nome){
 }
 const FONTE='Helvetica,Arial,sans-serif';
 function aviso(t,html){const m=$('pdfmsg');m[html?'innerHTML':'textContent']=t;m.hidden=false;}
+let valorFixo=null;
+const sp=v=>v.replace(/\u00a0/g,' ');
+function logoSalva(){try{return JSON.parse(localStorage.getItem('eixoz-logo')||'null');}catch(e){return null;}}
+function atualizaLogoNota(){$('lgnota').hidden=!logoSalva();}
 async function coletar(){
   const nome=$('nm').value.trim();
   if(!nome){aviso('Digite o nome da peça.');return null;}
-  if(!(FINAL>0)){aviso('Preencha os dados da calculadora antes de gerar o orçamento.');return null;}
+  if(!valorFixo&&!(FINAL>0)){aviso('Preencha os dados da calculadora antes de gerar o orçamento.');return null;}
   $('pdfmsg').hidden=true;
-  const [lg,ft]=await Promise.all([lerImg($('lg').files[0],true),lerImg($('ft').files[0],false)]);
-  return {nome,tm:$('tm').value.trim(),pz:$('pz').value.trim(),lg,ft,valor:brl(FINAL*QTD).replace(/\u00a0/g,' '),qtd:QTD,unit:brl(FINAL).replace(/\u00a0/g,' ')};
+  let [lg,ft]=await Promise.all([lerImg($('lg').files[0],true),lerImg($('ft').files[0],false)]);
+  if(lg){try{if(lg.d.length<900000)localStorage.setItem('eixoz-logo',JSON.stringify(lg));}catch(e){}}
+  else lg=logoSalva();
+  const v=valorFixo||{valor:sp(brl(FINAL*QTD)),qtd:QTD,unit:sp(brl(FINAL))};
+  return {nome,cli:$('cl').value.trim(),tm:$('tm').value.trim(),pz:$('pz').value.trim(),val:$('vl').value.trim(),ct:$('ct').value.trim(),lg,ft,valor:v.valor,qtd:v.qtd,unit:v.unit};
 }
 function arquivo(d,ext){return 'Orçamento - '+(d.nome.replace(/[\\\/:*?"<>|]+/g,' ').replace(/\s+/g,' ').trim().slice(0,60)||'peça')+'.'+ext;}
 function criarPDF(d){
@@ -379,6 +415,7 @@ function criarPDF(d){
   doc.setTextColor(21,18,46);doc.setFont('helvetica','bold');doc.setFontSize(24);doc.text('ORÇAMENTO',W-M,26,{align:'right'});
   doc.setFont('helvetica','normal');doc.setFontSize(10);doc.setTextColor(93,90,120);
   doc.text(new Date().toLocaleDateString('pt-BR'),W-M,33,{align:'right'});
+  if(d.cli){doc.setFont('helvetica','bold');doc.setFontSize(11);doc.setTextColor(21,18,46);doc.text(('Cliente: '+d.cli).slice(0,45),W-M,41,{align:'right'});doc.setFont('helvetica','normal');doc.setFontSize(10);doc.setTextColor(93,90,120);}
   doc.setDrawColor(255,46,115);doc.setLineWidth(.8);doc.line(M,48,W-M,48);
   let y=62;doc.setTextColor(21,18,46);doc.setFont('helvetica','bold');doc.setFontSize(20);
   const ls=doc.splitTextToSize(d.nome,W-2*M);doc.text(ls,M,y);y+=ls.length*8+2;
@@ -386,7 +423,7 @@ function criarPDF(d){
   doc.setFontSize(12);
   const det=(k,v)=>{if(!v)return;doc.setFont('helvetica','bold');doc.text(k+':',M,y);
     doc.setFont('helvetica','normal');const l=doc.splitTextToSize(v,W-2*M-44);doc.text(l,M+44,y);y+=l.length*6+3;};
-  det('Tamanho da peça',d.tm);det('Prazo',d.pz);
+  det('Tamanho da peça',d.tm);det('Prazo',d.pz);det('Validade',d.val);
   y+=6;
   doc.setFillColor(255,247,224);doc.setDrawColor(21,18,46);doc.setLineWidth(.8);
   const bh=d.qtd>1?52:42;
@@ -395,6 +432,7 @@ function criarPDF(d){
   doc.setFontSize(36);doc.setTextColor(216,27,96);doc.text(d.valor,W/2,y+31,{align:'center'});
   if(d.qtd>1){doc.setFont('helvetica','normal');doc.setFontSize(12);doc.setTextColor(93,90,120);doc.text(d.unit+' por unidade',W/2,y+44,{align:'center'});}
   doc.setFont('helvetica','normal');doc.setFontSize(10);doc.setTextColor(93,90,120);
+  if(d.ct)doc.text(doc.splitTextToSize('Contato: '+d.ct,W-2*M)[0],W/2,278,{align:'center'});
   doc.text('Obrigado pela preferência!',W/2,285,{align:'center'});
   return doc.output('blob');
 }
@@ -409,11 +447,12 @@ async function criarImagem(d){
   if(li){const[w,h]=ajusta(li,280,150);x.drawImage(li,M,80,w,h);}
   x.textAlign='right';x.fillStyle='#15122e';x.font='bold 64px '+FONTE;x.fillText('ORÇAMENTO',W-M,140);
   x.fillStyle='#5d5a78';x.font='30px '+FONTE;x.fillText(new Date().toLocaleDateString('pt-BR'),W-M,190);
+  if(d.cli){x.fillStyle='#15122e';x.font='bold 32px '+FONTE;x.fillText(('Cliente: '+d.cli).slice(0,36),W-M,232);}
   x.textAlign='left';x.fillStyle='#ff2e73';x.fillRect(M,250,W-2*M,5);
   let y=330;x.fillStyle='#15122e';x.font='bold 56px '+FONTE;
   for(const l of quebra(x,d.nome,W-2*M).slice(0,2)){x.fillText(l,M,y);y+=66;}
-  if(fi){const[w,h]=ajusta(fi,W-2*M,420);x.drawImage(fi,(W-w)/2,y,w,h);y+=h+40;}
-  for(const[k,v] of [['Tamanho da peça',d.tm],['Prazo',d.pz]]){if(!v)continue;
+  if(fi){const[w,h]=ajusta(fi,W-2*M,360);x.drawImage(fi,(W-w)/2,y,w,h);y+=h+40;}
+  for(const[k,v] of [['Tamanho da peça',d.tm],['Prazo',d.pz],['Validade',d.val]]){if(!v)continue;
     x.fillStyle='#15122e';x.font='bold 34px '+FONTE;x.fillText(k+': ',M,y);
     const kw=x.measureText(k+': ').width;x.font='34px '+FONTE;x.fillText(v,M+kw,y);y+=50;}
   y+=20;
@@ -424,6 +463,7 @@ async function criarImagem(d){
   x.fillStyle='#5d5a78';x.font='bold 30px '+FONTE;x.fillText(d.qtd>1?'VALOR TOTAL ('+d.qtd+' UNIDADES)':'VALOR',M+30,y+50);
   x.textAlign='center';x.fillStyle='#d81b60';x.font='bold 110px '+FONTE;x.fillText(d.valor,W/2,y+160);
   if(d.qtd>1){x.fillStyle='#5d5a78';x.font='34px '+FONTE;x.fillText(d.unit+' por unidade',W/2,y+215);}
+  x.fillStyle='#5d5a78';x.font='30px '+FONTE;if(d.ct){x.fillStyle='#5d5a78';x.font='30px '+FONTE;x.fillText(('Contato: '+d.ct).slice(0,60),W/2,H-62);}
   x.fillStyle='#5d5a78';x.font='30px '+FONTE;x.fillText('Obrigado pela preferência!',W/2,H-24);
   return new Promise(r=>c.toBlob(r,'image/jpeg',.9));
 }
@@ -438,7 +478,7 @@ async function enviar(blob,nome,tipo,texto,url,app){
 }
 function roda(id,fn){$(id).onclick=async()=>{
   const b=$(id);b.disabled=true;
-  try{const d=await coletar();if(d)await fn(d);}
+  try{const d=await coletar();if(d){await fn(d);salvarHist(d);}}
   catch(e){if(e&&e.code==='nolib')aviso('Não foi possível carregar o gerador de PDF. Verifique a internet e tente de novo.');
     else if(!e||e.code!=='declined')aviso('Não foi possível concluir. Tente de novo.');}
   b.disabled=false;};}
@@ -685,6 +725,44 @@ document.addEventListener('paste',e=>{
   arq=f;$('prout').hidden=true;$('prask').hidden=false;
   $('prask').scrollIntoView({behavior:'smooth',block:'center'});
 });
+/* ===== Histórico de orçamentos, logo salva e valor mantido ===== */
+const HK='eixoz-orcamentos';
+const esc=t=>String(t).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+function lerHist(){try{return JSON.parse(localStorage.getItem(HK)||'[]');}catch(e){return [];}}
+function gravaHist(a){try{localStorage.setItem(HK,JSON.stringify(a.slice(0,30)));}catch(e){}}
+function salvarHist(d){
+  const a=lerHist();
+  a.unshift({t:Date.now(),nome:d.nome,cli:d.cli,tm:d.tm,pz:d.pz,val:d.val,ct:d.ct,valor:d.valor,qtd:d.qtd,unit:d.unit});
+  gravaHist(a);mostraHist();
+}
+function mostraHist(){
+  const a=lerHist();
+  $('histvazio').hidden=a.length>0;$('histlimpa').hidden=a.length===0;
+  $('hist').innerHTML=a.slice(0,10).map((e,i)=>'<div class="hrow"><b>'+esc(e.nome)+'</b><div class="hm">'+new Date(e.t).toLocaleDateString('pt-BR')+(e.cli?' · '+esc(e.cli):'')+(e.qtd>1?' · '+e.qtd+' un.':'')+'</div><div class="hv">'+esc(e.valor)+'</div><div class="hb"><button type="button" class="pch" data-h="'+i+'">Refazer</button><button type="button" class="pch" data-x="'+i+'">Apagar</button></div></div>').join('');
+}
+$('hist').addEventListener('click',e=>{
+  const b=e.target.closest('button');if(!b)return;
+  const a=lerHist();
+  if(b.dataset.x!==undefined){a.splice(+b.dataset.x,1);gravaHist(a);mostraHist();return;}
+  if(b.dataset.h!==undefined){
+    const h=a[+b.dataset.h];if(!h)return;
+    $('nm').value=h.nome;$('cl').value=h.cli||'';$('tm').value=h.tm||'';$('pz').value=h.pz||'';$('vl').value=h.val||'';$('ct').value=h.ct||'';
+    valorFixo={valor:h.valor,qtd:h.qtd,unit:h.unit};
+    const t=tempoTxt(),pb=$('pzh');pb.textContent='Tempo de impressão ('+t+')';pb.dataset.p=t;pb.hidden=!t;
+    $('fixonota').innerHTML='Valor mantido do orçamento de '+new Date(h.t).toLocaleDateString('pt-BR')+': '+esc(h.valor)+'. <button type="button" class="pch" id="usaatual">Usar valor atual</button>';
+    $('fixonota').hidden=false;$('pdfmsg').hidden=true;ov.hidden=false;atualizaLogoNota();
+  }
+});
+$('fixonota').addEventListener('click',e=>{if(e.target.id==='usaatual'){valorFixo=null;$('fixonota').hidden=true;}});
+let pedeLimpar=0;
+$('histlimpa').onclick=()=>{
+  const b=$('histlimpa');
+  if(!pedeLimpar){b.textContent='Toque de novo para apagar tudo';pedeLimpar=setTimeout(()=>{pedeLimpar=0;b.textContent='Limpar histórico';},4000);return;}
+  clearTimeout(pedeLimpar);pedeLimpar=0;b.textContent='Limpar histórico';gravaHist([]);mostraHist();
+};
+$('lgesq').onclick=()=>{try{localStorage.removeItem('eixoz-logo');}catch(e){}$('lg').value='';atualizaLogoNota();};
+document.querySelectorAll('.pch[data-v]').forEach(b=>b.onclick=()=>{$('vl').value=b.dataset.v;});
+mostraHist();
 </script>
 </body>
 </html>

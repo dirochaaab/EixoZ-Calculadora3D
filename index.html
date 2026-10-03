@@ -194,6 +194,17 @@ label.tog:has(input:checked){background:linear-gradient(135deg,var(--pink),var(-
 </section>
 
 <section>
+<h2>Vários itens (atacado)</h2>
+<label class="tog"><input type="checkbox" id="multi"> Ativar vários itens</label>
+<div id="multibox" hidden>
+<label for="qtd">Quantidade de unidades</label>
+<div class="in"><input id="qtd" inputmode="numeric" value="1"><span>un</span></div>
+<p class="hint" id="qtdst"></p>
+<div class="dica"><strong>ATACADO:</strong> a margem de lucro baixa sozinha conforme a quantidade. Mais de 10 unidades: margem de 90%. Mais de 20: 80%. Mais de 30: 70%. A margem que você digitou só é reduzida, nunca aumentada.</div>
+</div>
+</section>
+
+<section>
 <h2>Para onde vai o custo</h2>
 <div class="bar" id="bar"></div>
 <div id="lines"></div>
@@ -205,6 +216,7 @@ label.tog:has(input:checked){background:linear-gradient(135deg,var(--pink),var(-
 <div class="res"><span>Valor líquido desejado</span><b id="rl">R$ 0,00</b><small>Custos + margem de lucro. É o que você quer receber.</small></div>
 <div class="res hi" id="rs" hidden><span>Preço de venda Shopee</span><b id="rsv"></b><small id="rsh"></small></div>
 <div class="res hi" id="rt" hidden><span>Preço de tabela (riscado)</span><b><s id="rtv"></s></b><small id="rth"></small></div>
+<div class="res hi" id="rq" hidden><span id="rqt">Total</span><b id="rqv"></b><small id="rqh"></small></div>
 </section>
 <section class="cta">
 <button type="button" class="pdfbtn" id="openpdf">Gerar PDF de orçamento</button>
@@ -268,7 +280,7 @@ function tiers(){
     $(c.el).innerHTML=c.t.map((r,i)=>{const v=r[2](x);
       return '<button type="button" class="tier'+(Math.abs(cur-v)<.005?' on':'')+(i===si?' sug':'')+'" data-k="'+k+'" data-i="'+i+'"><span>'+r[0]+(i===si?'<em>sugerido</em>':'')+'</span><b>'+(r[3]||brl(v))+'</b></button>';}).join('');}
 }
-let FINAL=0;
+let FINAL=0,QTD=1;
 function calc(){
   tiers();
   const h=n('horas')+n('minutos')/60, kwh=n('base')+n('adic');
@@ -279,7 +291,9 @@ function calc(){
     ['Mão de obra',n('mo')],
     ['Custos fixos',n('fixos')]
   ];
-  const custo=itens.reduce((s,i)=>s+i[1],0), lucro=custo*n('margem')/100, liquido=custo+lucro;
+  const mult=$('multi').checked,qtd=mult?Math.max(1,Math.floor(n('qtd'))):1;
+  const faixa=qtd>30?70:qtd>20?80:qtd>10?90:null,mg=n('margem'),mgEf=faixa!==null?Math.min(mg,faixa):mg;
+  const custo=itens.reduce((s,i)=>s+i[1],0), lucro=custo*mgEf/100, liquido=custo+lucro;
   const on=$('shopee').checked, shopee=(liquido+4)/0.80, base=on?shopee:liquido, d=n('desc');
   const tabela=d>0&&d<100?base/(1-d/100):0;
   $('kwh').textContent='R$ '+kwh.toFixed(4).replace('.',',');
@@ -290,9 +304,14 @@ function calc(){
   $('rsh').textContent='Inclui comissão de 20% + R$ 4,00: '+brl(shopee-liquido)+' em taxas.';
   $('rt').hidden=!tabela;$('rtv').textContent=brl(tabela);
   $('rth').textContent='Com '+d+'% de desconto sobre '+(on?'o preço Shopee':'o valor líquido')+', chega em '+brl(base)+'.';
-  $('slabel').textContent=on?'Preço de venda Shopee':'Valor líquido';
-  $('venda').textContent=brl(on?shopee:liquido);FINAL=on?shopee:liquido;
-  $('custo').textContent=brl(custo);$('lucro').textContent=brl(lucro);
+  const unit=on?shopee:liquido,mq=mult&&qtd>1?qtd:1,lim=faixa===90?10:faixa===80?20:30;
+  $('slabel').textContent=mq>1?'Total ('+qtd+' unidades)':(on?'Preço de venda Shopee':'Valor líquido');
+  $('venda').textContent=brl(unit*mq);FINAL=unit;QTD=mq;
+  $('custo').textContent=brl(custo*mq);$('lucro').textContent=brl(lucro*mq);
+  $('multibox').hidden=!mult;
+  $('qtdst').textContent=!mult?'':faixa===null?'Até 10 unidades: sem redução de margem.':mg<=faixa?'Mais de '+lim+' unidades: a faixa seria '+faixa+'%, mas a sua margem ('+mg+'%) já é menor e foi mantida.':'Mais de '+lim+' unidades: margem de lucro reduzida para '+faixa+'%.';
+  $('rq').hidden=!(mq>1);$('rqt').textContent='Total para '+qtd+' unidades';$('rqv').textContent=brl(unit*mq);
+  $('rqh').textContent=brl(unit)+' por unidade'+(faixa!==null&&mg>faixa?', com margem de atacado de '+faixa+'%.':'.');
   document.querySelectorAll('.chips').forEach(g=>{
     const v=n(g.dataset.t),cs=[...g.querySelectorAll('.chip')];
     const m=cs.filter(c=>Math.abs(parseFloat(c.dataset.v)-v)<1e-9);
@@ -347,7 +366,7 @@ async function coletar(){
   if(!(FINAL>0)){aviso('Preencha os dados da calculadora antes de gerar o orçamento.');return null;}
   $('pdfmsg').hidden=true;
   const [lg,ft]=await Promise.all([lerImg($('lg').files[0],true),lerImg($('ft').files[0],false)]);
-  return {nome,tm:$('tm').value.trim(),pz:$('pz').value.trim(),lg,ft,valor:brl(FINAL).replace(/\u00a0/g,' ')};
+  return {nome,tm:$('tm').value.trim(),pz:$('pz').value.trim(),lg,ft,valor:brl(FINAL*QTD).replace(/\u00a0/g,' '),qtd:QTD,unit:brl(FINAL).replace(/\u00a0/g,' ')};
 }
 function arquivo(d,ext){return 'Orçamento - '+(d.nome.replace(/[\\\/:*?"<>|]+/g,' ').replace(/\s+/g,' ').trim().slice(0,60)||'peça')+'.'+ext;}
 function criarPDF(d){
@@ -370,9 +389,11 @@ function criarPDF(d){
   det('Tamanho da peça',d.tm);det('Prazo',d.pz);
   y+=6;
   doc.setFillColor(255,247,224);doc.setDrawColor(21,18,46);doc.setLineWidth(.8);
-  doc.roundedRect(M,y,W-2*M,42,3,3,'FD');
-  doc.setFont('helvetica','bold');doc.setFontSize(11);doc.setTextColor(93,90,120);doc.text('VALOR',M+8,y+11);
+  const bh=d.qtd>1?52:42;
+  doc.roundedRect(M,y,W-2*M,bh,3,3,'FD');
+  doc.setFont('helvetica','bold');doc.setFontSize(11);doc.setTextColor(93,90,120);doc.text(d.qtd>1?'VALOR TOTAL ('+d.qtd+' UNIDADES)':'VALOR',M+8,y+11);
   doc.setFontSize(36);doc.setTextColor(216,27,96);doc.text(d.valor,W/2,y+31,{align:'center'});
+  if(d.qtd>1){doc.setFont('helvetica','normal');doc.setFontSize(12);doc.setTextColor(93,90,120);doc.text(d.unit+' por unidade',W/2,y+44,{align:'center'});}
   doc.setFont('helvetica','normal');doc.setFontSize(10);doc.setTextColor(93,90,120);
   doc.text('Obrigado pela preferência!',W/2,285,{align:'center'});
   return doc.output('blob');
@@ -397,11 +418,13 @@ async function criarImagem(d){
     const kw=x.measureText(k+': ').width;x.font='34px '+FONTE;x.fillText(v,M+kw,y);y+=50;}
   y+=20;
   x.fillStyle='#fff3d6';x.strokeStyle='#15122e';x.lineWidth=5;x.beginPath();
-  if(x.roundRect)x.roundRect(M,y,W-2*M,200,16);else x.rect(M,y,W-2*M,200);
+  const bh=d.qtd>1?250:200;
+  if(x.roundRect)x.roundRect(M,y,W-2*M,bh,16);else x.rect(M,y,W-2*M,bh);
   x.fill();x.stroke();
-  x.fillStyle='#5d5a78';x.font='bold 30px '+FONTE;x.fillText('VALOR',M+30,y+50);
+  x.fillStyle='#5d5a78';x.font='bold 30px '+FONTE;x.fillText(d.qtd>1?'VALOR TOTAL ('+d.qtd+' UNIDADES)':'VALOR',M+30,y+50);
   x.textAlign='center';x.fillStyle='#d81b60';x.font='bold 110px '+FONTE;x.fillText(d.valor,W/2,y+160);
-  x.fillStyle='#5d5a78';x.font='30px '+FONTE;x.fillText('Obrigado pela preferência!',W/2,H-50);
+  if(d.qtd>1){x.fillStyle='#5d5a78';x.font='34px '+FONTE;x.fillText(d.unit+' por unidade',W/2,y+215);}
+  x.fillStyle='#5d5a78';x.font='30px '+FONTE;x.fillText('Obrigado pela preferência!',W/2,H-24);
   return new Promise(r=>c.toBlob(r,'image/jpeg',.9));
 }
 async function enviar(blob,nome,tipo,texto,url,app){

@@ -109,8 +109,9 @@ label.tog:has(input:checked){background:linear-gradient(135deg,var(--pink),var(-
 <div class="pchips" style="margin:12px 0 0"><button type="button" class="pch" id="pryes">Sim, arredondar</button><button type="button" class="pch" id="prno">Não, usar os valores lidos</button></div>
 </div>
 <p class="hint tip" id="prout" hidden></p>
-<p class="hint">Envie o print do MakerWorld com o tempo e o gasto total, ou uma foto da tela do fatiador no computador. A calculadora preenche as gramas e o tempo, escolhe a mão de obra e os custos fixos sugeridos e coloca a margem de lucro em 100%. Tudo pode ser alterado depois. Atenção: o MakerWorld mostra o tempo em horas decimais, então 8,9h é 8h54, e não 8h09.</p>
+<p class="hint">Envie o print do MakerWorld com o tempo e o gasto total, ou uma foto da tela do fatiador no computador. No computador, você também pode colar a imagem com Ctrl+V. A calculadora preenche as gramas e o tempo, escolhe a mão de obra e os custos fixos sugeridos e coloca a margem de lucro em 100%. Tudo pode ser alterado depois. Atenção: o MakerWorld mostra o tempo em horas decimais, então 8,9h é 8h54, e não 8h09.</p>
 <p class="hint tip">Preenchimento automático ainda em testes, revise sempre os valores.</p>
+<p class="hint tip">Procure sempre enviar fotos o mais nítidas possível para não ter erro.</p>
 </section>
 
 <section>
@@ -447,25 +448,48 @@ function carregarOCR(){return new Promise((ok,no)=>{
   if(window.Tesseract)return ok();
   const s=document.createElement('script');s.src='https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js';
   s.onload=ok;s.onerror=()=>no({code:'ocrlib'});document.head.appendChild(s);});}
-function prepara(file){return new Promise((ok,no)=>{
+const CFGS=[{b:[5,3],T:12},{b:[5,5],T:18},{modo:'cinza'},{b:[],T:18}];
+function caixa(g,W,H,k){
+  const r=(k-1)/2,t=new Float32Array(g.length);
+  for(let y=0;y<H;y++){let s=0;const o=y*W;
+    for(let x=-r;x<=r;x++)s+=g[o+Math.min(W-1,Math.max(0,x))];
+    for(let x=0;x<W;x++){t[o+x]=s/k;s+=g[o+Math.min(W-1,x+r+1)]-g[o+Math.max(0,x-r)];}}
+  for(let x=0;x<W;x++){let s=0;
+    for(let y=-r;y<=r;y++)s+=t[Math.min(H-1,Math.max(0,y))*W+x];
+    for(let y=0;y<H;y++){g[y*W+x]=s/k;s+=t[Math.min(H-1,y+r+1)*W+x]-t[Math.max(0,y-r)*W+x];}}
+}
+function carregarImg(file){return new Promise((ok,no)=>{
   const r=new FileReader();r.onerror=()=>no({});
-  r.onload=()=>{const im=new Image();im.onerror=()=>no({});
-    im.onload=()=>{
-      const k=Math.min(3,Math.max(.4,2000/im.width)),W=Math.round(im.width*k),H=Math.round(im.height*k);
-      const c=document.createElement('canvas');c.width=W;c.height=H;
-      const x=c.getContext('2d');x.drawImage(im,0,0,W,H);
-      const d=x.getImageData(0,0,W,H),p=d.data,N=W*H,g=new Float32Array(N);let soma=0;
-      for(let i=0;i<N;i++){const v=.299*p[i*4]+.587*p[i*4+1]+.114*p[i*4+2];g[i]=v;soma+=v;}
-      const claro=soma/N<128,R=25,T=18,W1=W+1,ii=new Float64Array(W1*(H+1));
-      for(let y=0;y<H;y++){let lin=0;for(let xx=0;xx<W;xx++){lin+=g[y*W+xx];ii[(y+1)*W1+xx+1]=ii[y*W1+xx+1]+lin;}}
-      for(let y=0;y<H;y++){const y0=Math.max(0,y-R),y1=Math.min(H,y+R+1);
-        for(let xx=0;xx<W;xx++){const x0=Math.max(0,xx-R),x1=Math.min(W,xx+R+1);
-          const s=ii[y1*W1+x1]-ii[y0*W1+x1]-ii[y1*W1+x0]+ii[y0*W1+x0];
-          const dif=g[y*W+xx]-s/((y1-y0)*(x1-x0)),tinta=claro?dif>T:dif<-T,o=(y*W+xx)*4;
-          p[o]=p[o+1]=p[o+2]=tinta?0:255;p[o+3]=255;}}
-      x.putImageData(d,0,0);ok(c);};
-    im.src=r.result;};
+  r.onload=()=>{const im=new Image();im.onerror=()=>no({});im.onload=()=>ok(im);im.src=r.result;};
   r.readAsDataURL(file);});}
+function regioes(im){
+  const w=im.width,h=im.height;
+  if(!(w>=1400&&h>=700&&w/h>=1.3))return [{sx:0,sy:0,sw:w,sh:h,k:Math.min(3,Math.max(.4,2000/w))}];
+  const tw=Math.round(w*.58),th=Math.round(h*.58),k=Math.min(3,Math.max(1,2000/tw));
+  return [w-tw,0].flatMap(sx=>[0,h-th].map(sy=>({sx,sy,sw:tw,sh:th,k})));
+}
+function binarizaRegiao(im,R,cfg){
+  const W=Math.round(R.sw*R.k),H=Math.round(R.sh*R.k);
+  const c=document.createElement('canvas');c.width=W;c.height=H;
+  const x=c.getContext('2d');x.drawImage(im,R.sx,R.sy,R.sw,R.sh,0,0,W,H);
+  const d=x.getImageData(0,0,W,H),p=d.data,N=W*H,g=new Float32Array(N);let soma=0;
+  for(let i=0;i<N;i++){const v=.299*p[i*4]+.587*p[i*4+1]+.114*p[i*4+2];g[i]=v;soma+=v;}
+  if(cfg.modo==='cinza'){
+    const inv=soma/N<115;
+    for(let i=0;i<N;i++){const v=inv?255-g[i]:g[i],o=i*4;p[o]=p[o+1]=p[o+2]=v;p[o+3]=255;}
+    x.putImageData(d,0,0);return c;
+  }
+  const claro=soma/N<128,RR=25,T=cfg.T,W1=W+1;
+  cfg.b.forEach(kk=>caixa(g,W,H,kk));
+  const ii=new Float64Array(W1*(H+1));
+  for(let y=0;y<H;y++){let lin=0;for(let xx=0;xx<W;xx++){lin+=g[y*W+xx];ii[(y+1)*W1+xx+1]=ii[y*W1+xx+1]+lin;}}
+  for(let y=0;y<H;y++){const y0=Math.max(0,y-RR),y1=Math.min(H,y+RR+1);
+    for(let xx=0;xx<W;xx++){const x0=Math.max(0,xx-RR),x1=Math.min(W,xx+RR+1);
+      const s=ii[y1*W1+x1]-ii[y0*W1+x1]-ii[y1*W1+x0]+ii[y0*W1+x0];
+      const dif=g[y*W+xx]-s/((y1-y0)*(x1-x0)),tinta=claro?dif>T:dif<-T,o=(y*W+xx)*4;
+      p[o]=p[o+1]=p[o+2]=tinta?0:255;p[o+3]=255;}}
+  x.putImageData(d,0,0);return c;
+}
 $('prbtn').onclick=()=>$('pr').click();
 let arq=null;
 function folga(r){const o={g:r.g,min:r.min};
@@ -526,15 +550,8 @@ function corrigeTempo(r){
   const nm=Math.round(nh*60);
   return {r:{g:r.g,min:nm},txt:' O tempo lido ('+hm(r.min)+') era alto demais para '+String(r.g).replace('.',',')+' g, então usei '+hm(nm)+'. Confira.'};
 }
-async function processar(f,arred){
-  const o=$('prout'),b=$('prbtn');
-  $('prask').hidden=true;o.hidden=false;b.disabled=true;
-  o.textContent='Lendo a imagem... na primeira vez pode demorar um pouco.';
-  const ler=async()=>{
-    await carregarOCR();
-    const cv=await prepara(f);
-    const w=await Tesseract.createWorker('eng',1,{logger:m=>{if(m.status==='recognizing text')o.textContent='Lendo a imagem... '+Math.round(m.progress*100)+'%';}});
-    await w.setParameters({tessedit_pageseg_mode:'11'});
+async function lerUma(w,cv){
+    await w.setParameters({tessedit_pageseg_mode:'11',tessedit_char_whitelist:''});
     const {data}=await w.recognize(cv);
     let texto=data.text,n2=0;
     for(const p of (data.words||[])){
@@ -576,18 +593,45 @@ async function processar(f,arred){
         }
       }
     }
-    await w.terminate();
     const res=lerTempoPeso(texto);
-    let nota='';
+    let nota='',via='';
     const mod0=tempoModelo(ws);
     if(tot!==null&&mod0!==null&&tot<mod0)tot=null;
-    if(tot===null){const inf=inferirTotal(ws,rot);if(inf&&(res.min===null||res.min<=inf.min)){tot=inf.min;nota=inf.nota;}}
+    if(tot!==null)via='rótulo';
+    if(tot===null){const inf=inferirTotal(ws,rot);if(inf&&(res.min===null||res.min<=inf.min)){tot=inf.min;nota=inf.nota;via=inf.nota?'modelo':'inferido';}}
     if(tot!==null)res.min=tot;
-    res.nota=nota;
-    return res;};
+    res.nota=nota;res.via=via;
+    return res;
+}
+
+async function processar(f,arred){
+  const o=$('prout'),b=$('prbtn');
+  $('prask').hidden=true;o.hidden=false;b.disabled=true;
+  o.textContent='Lendo a imagem... na primeira vez pode demorar um pouco.';
+  let msgBase='Lendo a imagem... ';
+  const ler=async()=>{
+    await carregarOCR();
+    const im=await carregarImg(f),regs=regioes(im);
+    const ordem=f.type==='image/png'?[2,3,0]:[0,1];
+    const w=await Tesseract.createWorker('eng',1,{logger:m=>{if(m.status==='recognizing text')o.textContent=msgBase+Math.round(m.progress*100)+'%';}});
+    let melhor=null,pesos=[];
+    laco:for(let a=0;a<ordem.length;a++){
+      for(let j=0;j<regs.length;j++){
+        msgBase=(regs.length>1?'Lendo parte '+(j+1)+' de '+regs.length+'... ':'Lendo a imagem... ')+(a?'(outro ajuste) ':'');
+        const cv=binarizaRegiao(im,regs[j],CFGS[ordem[a]]);
+        const r=await lerUma(w,cv);
+        if(r.g!==null)pesos.push(r.g);
+        const rz=r.min!==null&&r.g!==null?r.g/(r.min/60):0,plaus=rz>=4&&rz<=150;
+        if(!melhor||(r.via==='rótulo'&&melhor.via!=='rótulo')||(!melhor.plaus&&plaus&&melhor.via!=='rótulo'))melhor=Object.assign({},r,{plaus});
+        if(r.via==='rótulo'&&r.g!==null)break laco;
+      }
+    }
+    await w.terminate();
+    if(melhor&&melhor.via!=='rótulo'&&pesos.length)melhor.g=Math.max(...pesos);
+    return melhor||{min:null,g:null,nota:''};};
 
   try{
-    const r0=await Promise.race([ler(),new Promise((_,no)=>setTimeout(()=>no({code:'timeout'}),90000))]);
+    const r0=await Promise.race([ler(),new Promise((_,no)=>setTimeout(()=>no({code:'timeout'}),240000))]);
     const cc=corrigeTempo(r0),r=cc.r;
     const nota=r0.nota||'';
     if(r.min===null&&r.g===null){o.textContent='Não consegui encontrar o tempo nem o peso nessa imagem. Tente um print mais nítido ou digite manualmente.';}
@@ -610,6 +654,14 @@ async function processar(f,arred){
 }
 $('pryes').onclick=()=>processar(arq,true);
 $('prno').onclick=()=>processar(arq,false);
+document.addEventListener('paste',e=>{
+  const it=[...((e.clipboardData&&e.clipboardData.items)||[])].find(i=>i.type.startsWith('image/'));
+  if(!it)return;
+  const f=it.getAsFile();if(!f)return;
+  e.preventDefault();
+  arq=f;$('prout').hidden=true;$('prask').hidden=false;
+  $('prask').scrollIntoView({behavior:'smooth',block:'center'});
+});
 </script>
 </body>
 </html>
